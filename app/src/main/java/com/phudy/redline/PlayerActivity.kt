@@ -324,10 +324,22 @@ class PlayerActivity : ComponentActivity() {
                     if (c.original != c.thai) Text(c.original, textAlign = TextAlign.Center, fontSize = 12.sp, color = Color(0xCCFFFFFF), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
+            // Always-visible entry point for speech translation
+            if (speechMode == SpeechMode.OFF && speechStatus == null && controlsVisible) {
+                Row(
+                    Modifier.align(Alignment.TopEnd).padding(top = 64.dp, end = 12.dp).clip(RoundedCornerShape(50)).background(R.redGradient)
+                        .clickable { showSpeech = true }.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.RecordVoiceOver, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("แปลเสียงเป็นไทย", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
             if (speechMode != SpeechMode.OFF || speechStatus != null) {
                 Row(
                     Modifier.align(Alignment.TopEnd).padding(top = 64.dp, end = 12.dp).clip(RoundedCornerShape(50)).background(Color(0xAA000000))
-                        .clickable { if (speechMode == SpeechMode.OFF) speechStatus = null }.padding(horizontal = 12.dp, vertical = 6.dp),
+                        .clickable { if (speechMode == SpeechMode.OFF) speechStatus = null; showSpeech = true }.padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Rounded.RecordVoiceOver, null, tint = R.Red, modifier = Modifier.size(16.dp))
