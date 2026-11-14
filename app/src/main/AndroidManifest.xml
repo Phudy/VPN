@@ -51,6 +51,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".EmbedPlayerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Redline.Player"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
+
         <service
             android:name=".vpn.ShieldVpnService"
             android:exported="false"

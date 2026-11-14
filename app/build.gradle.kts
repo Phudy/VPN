@@ -12,8 +12,8 @@ android {
         applicationId = "com.phudy.redline"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     buildTypes {
@@ -48,6 +48,9 @@ dependencies {
 
     // VPN tunnel (official WireGuard userspace backend)
     implementation("com.wireguard.android:tunnel:1.0.20230706")
+
+    // Thumbnails
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Player
     implementation("androidx.media3:media3-exoplayer:1.5.1")

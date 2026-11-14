@@ -28,6 +28,7 @@ import com.phudy.redline.vpn.VpnController
 enum class Tab(val label: String, val icon: ImageVector) {
     HOME("หน้าหลัก", Icons.Rounded.Shield),
     SERVERS("เซิร์ฟเวอร์", Icons.Rounded.Public),
+    EXPLORE("สำรวจ 18+", Icons.Rounded.Whatshot),
     BROWSER("เบราว์เซอร์", Icons.Rounded.TravelExplore),
     MEDIA("มีเดีย", Icons.Rounded.PlayCircle),
     TOOLS("เครื่องมือ", Icons.Rounded.Tune),
@@ -51,9 +52,9 @@ class MainActivity : ComponentActivity() {
                     containerColor = R.Bg,
                     bottomBar = {
                         NavigationBar(containerColor = R.Surface, tonalElevation = 0.dp) {
-                            Tab.entries.forEach { t ->
+                            Tab.entries.filter { it != Tab.SERVERS }.forEach { t ->
                                 NavigationBarItem(
-                                    selected = tab == t, onClick = { tab = t },
+                                    selected = tab == t || (t == Tab.HOME && tab == Tab.SERVERS), onClick = { tab = t },
                                     icon = { Icon(t.icon, t.label) },
                                     label = { Text(t.label, fontSize = 11.sp) },
                                     colors = NavigationBarItemDefaults.colors(
@@ -69,7 +70,11 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize().background(R.Bg).padding(pad)) {
                         when (tab) {
                             Tab.HOME -> HomeScreen(onToggle = ::toggleVpn, openServers = { tab = Tab.SERVERS })
-                            Tab.SERVERS -> ServersScreen()
+                            Tab.SERVERS -> {
+                                androidx.activity.compose.BackHandler { tab = Tab.HOME }
+                                ServersScreen()
+                            }
+                            Tab.EXPLORE -> ExploreScreen()
                             Tab.BROWSER -> BrowserScreen()
                             Tab.MEDIA -> MediaScreen()
                             Tab.TOOLS -> ToolsScreen()
@@ -79,6 +84,8 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStop() { super.onStop(); if (!isChangingConfigurations) ExploreLock.unlocked = false }
 
     private fun toggleVpn(on: Boolean) {
         if (!on) { VpnController.disconnect(this); return }

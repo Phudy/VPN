@@ -47,6 +47,21 @@ object Prefs {
     private val _history = MutableStateFlow<List<String>>(emptyList())
     val mediaHistory: StateFlow<List<String>> = _history
 
+    private val _adult = MutableStateFlow(false)
+    val adultConfirmed: StateFlow<Boolean> = _adult
+    private val _lock = MutableStateFlow(false)
+    val exploreLock: StateFlow<Boolean> = _lock
+    private val _sources = MutableStateFlow<Set<String>>(emptySet())
+    val exploreSources: StateFlow<Set<String>> = _sources
+
+    fun setAdultConfirmed() { _adult.value = true; sp.edit().putBoolean("adult", true).apply() }
+    fun setExploreLock(on: Boolean) { _lock.value = on; sp.edit().putBoolean("xlock", on).apply() }
+    fun toggleSource(id: String) {
+        val s = _sources.value.toMutableSet(); if (!s.add(id)) s.remove(id)
+        if (s.isEmpty()) return
+        _sources.value = s; sp.edit().putStringSet("xsources", s).apply()
+    }
+
     fun init(ctx: Context) {
         sp = ctx.getSharedPreferences("redline", Context.MODE_PRIVATE)
         profileDir = File(ctx.filesDir, "profiles").apply { mkdirs() }
@@ -56,6 +71,10 @@ object Prefs {
         _excluded.value = sp.getStringSet("excluded", emptySet())!!.toSet()
         _selected.value = sp.getString("profile", null)
         _history.value = sp.getString("history", "")!!.split('\n').filter { it.isNotBlank() }
+        _adult.value = sp.getBoolean("adult", false)
+        _lock.value = sp.getBoolean("xlock", false)
+        _sources.value = sp.getStringSet("xsources", null)?.toSet()
+            ?: com.phudy.redline.explore.PROVIDERS.map { it.id }.toSet()
         reloadProfiles()
     }
 
