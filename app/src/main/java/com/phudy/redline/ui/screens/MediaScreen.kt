@@ -74,6 +74,7 @@ fun MediaScreen() {
         }
 
         DownloadsSection()
+        FavoriteVideos()
 
         Spacer(Modifier.height(R.gap))
         Card(Modifier.padding(horizontal = R.gap).fillMaxWidth()) {
@@ -143,6 +144,29 @@ private fun DownloadsSection() {
                 Spacer(Modifier.height(8.dp))
                 if (t.progress >= 0) LinearProgressIndicator(progress = { t.progress }, Modifier.fillMaxWidth(), color = R.Red, trackColor = R.Surface2)
                 else LinearProgressIndicator(Modifier.fillMaxWidth(), color = R.Red, trackColor = R.Surface2)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FavoriteVideos() {
+    val ctx = LocalContext.current
+    val favs by com.phudy.redline.data.Favorites.items.collectAsState()
+    val videos = favs.filter { it.embedUrl == null }
+    if (videos.isEmpty()) return
+    Spacer(Modifier.height(R.gap))
+    SectionLabel("♥ วิดีโอที่ชื่นชอบ", Modifier.padding(horizontal = R.gap))
+    videos.forEach { f ->
+        Card(Modifier.padding(horizontal = R.gap, vertical = 4.dp).fillMaxWidth(), onClick = { f.open(ctx) }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Favorite, null, tint = R.Red)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(f.title, color = R.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                    Text(f.videoUrl.orEmpty(), color = R.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = { com.phudy.redline.data.Favorites.remove(f.id) }) { Icon(Icons.Rounded.DeleteOutline, "ลบ", tint = R.Muted) }
             }
         }
     }

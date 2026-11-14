@@ -35,6 +35,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.phudy.redline.EmbedPlayerActivity
 import com.phudy.redline.data.Prefs
+import com.phudy.redline.data.Favorite
+import com.phudy.redline.data.Favorites
+import android.widget.Toast
 import com.phudy.redline.download.Downloader
 import com.phudy.redline.explore.*
 import com.phudy.redline.translate.SubTranslator
@@ -112,6 +115,8 @@ private fun ExploreContent() {
     val thai = remember { mutableStateMapOf<String, String>() }
     var endReached by remember { mutableStateOf(false) }
     var menuFor by remember { mutableStateOf<Clip?>(null) }
+    var showFavs by remember { mutableStateOf(false) }
+    val favs by Favorites.items.collectAsState()
 
     fun load(reset: Boolean) {
         if (loading) return
@@ -158,7 +163,8 @@ private fun ExploreContent() {
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = R.Red, unfocusedBorderColor = R.Stroke, focusedContainerColor = R.Surface, unfocusedContainerColor = R.Surface, cursorColor = R.Red),
         )
         LazyRow(contentPadding = PaddingValues(horizontal = R.gap), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(Sort.entries) { s -> Pill(s.label, sort == s) { sort = s } }
+            item { Pill("♥ ชื่นชอบ ${favs.size}", showFavs) { showFavs = !showFavs } }
+            items(Sort.entries) { s -> Pill(s.label, sort == s && !showFavs) { sort = s; showFavs = false } }
             item { Spacer(Modifier.width(8.dp)) }
             items(PROVIDERS) { p -> Pill(p.name, p.id in sources, outline = true) { Prefs.toggleSource(p.id) } }
         }
@@ -180,20 +186,37 @@ private fun ExploreContent() {
             contentPadding = PaddingValues(R.gap, 4.dp, R.gap, 24.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            items(clips, key = { it.id }) { c ->
-                ClipCard(c, if (thaiTitles) thai[c.id] else null, onClick = {
+            if (showFavs) {
+                if (favs.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text("ยังไม่มีคลิปที่ชื่นชอบ — กด ♡ ที่คลิปเพื่อเก็บไว้ดูทีหลัง", color = R.Muted, modifier = Modifier.padding(20.dp))
+                }
+                items(favs, key = { "f-" + it.id }) { f ->
+                    ClipCard(
+                        Clip(f.id, f.source, f.title, f.thumb, f.durationSec, 0, 0.0, f.pageUrl.orEmpty(), f.embedUrl.orEmpty()),
+                        null, fav = true, onFav = { Favorites.remove(f.id) }, onClick = { f.open(ctx) }, onMore = null,
+                    )
+                }
+            } else items(clips, key = { it.id }) { c ->
+                ClipCard(c, if (thaiTitles) thai[c.id] else null, fav = favs.any { it.id == c.id }, onFav = {
+                    val on = Favorites.toggle(Favorite.of(c))
+                    Toast.makeText(ctx, if (on) "เพิ่มในรายการชื่นชอบแล้ว ♥" else "เอาออกจากรายการชื่นชอบแล้ว", Toast.LENGTH_SHORT).show()
+                }, onClick = {
                     ctx.startActivity(
                         Intent(ctx, EmbedPlayerActivity::class.java)
                             .putExtra(EmbedPlayerActivity.EXTRA_EMBED, c.embedUrl)
                             .putExtra(EmbedPlayerActivity.EXTRA_PAGE, c.pageUrl)
                             .putExtra(EmbedPlayerActivity.EXTRA_TITLE, c.title)
+                            .putExtra(EmbedPlayerActivity.EXTRA_THUMB, c.thumb)
+                            .putExtra(EmbedPlayerActivity.EXTRA_SOURCE, c.source)
+                            .putExtra(EmbedPlayerActivity.EXTRA_DURATION, c.durationSec)
+                            .putExtra(EmbedPlayerActivity.EXTRA_ID, c.id)
                     )
                 }, onMore = { menuFor = c })
             }
-            if (loading) item(span = { GridItemSpan(maxLineSpan) }) {
+            if (loading && !showFavs) item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = R.Red) }
             }
-            if (!loading && clips.isEmpty() && !refused) item(span = { GridItemSpan(maxLineSpan) }) {
+            if (!showFavs && !loading && clips.isEmpty() && !refused) item(span = { GridItemSpan(maxLineSpan) }) {
                 Text("ไม่พบผลลัพธ์", color = R.Muted, modifier = Modifier.padding(20.dp))
             }
         }
@@ -233,7 +256,7 @@ private fun Pill(text: String, selected: Boolean, outline: Boolean = false, onCl
 }
 
 @Composable
-private fun ClipCard(c: Clip, thaiTitle: String?, onClick: () -> Unit, onMore: () -> Unit) {
+private fun ClipCard(c: Clip, thaiTitle: String?, fav: Boolean, onFav: () -> Unit, onClick: () -> Unit, onMore: (() -> Unit)?) {
     Column(Modifier.clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(R.radiusS)).background(R.Surface2)) {
             AsyncImage(c.thumb, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -242,6 +265,13 @@ private fun ClipCard(c: Clip, thaiTitle: String?, onClick: () -> Unit, onMore: (
                 c.source, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(4.dp)).background(R.Red).padding(horizontal = 6.dp, vertical = 2.dp),
             )
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(4.dp).size(34.dp).clip(RoundedCornerShape(50))
+                    .background(Color(0x88000000)).clickable(onClick = onFav),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "ชื่นชอบ", tint = if (fav) R.Red else Color.White, modifier = Modifier.size(20.dp))
+            }
             if (c.durationSec > 0) Text(
                 "%d:%02d".format(c.durationSec / 60, c.durationSec % 60), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xCC000000)).padding(horizontal = 5.dp, vertical = 1.dp),
@@ -258,7 +288,7 @@ private fun ClipCard(c: Clip, thaiTitle: String?, onClick: () -> Unit, onMore: (
                     color = R.Muted, fontSize = 11.sp,
                 )
             }
-            Icon(Icons.Rounded.MoreVert, "เพิ่มเติม", tint = R.Muted, modifier = Modifier.size(20.dp).clickable(onClick = onMore))
+            if (onMore != null) Icon(Icons.Rounded.MoreVert, "เพิ่มเติม", tint = R.Muted, modifier = Modifier.size(20.dp).clickable(onClick = onMore))
         }
     }
 }

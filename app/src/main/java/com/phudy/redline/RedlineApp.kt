@@ -12,6 +12,7 @@ class RedlineApp : Application() {
         super.onCreate()
         instance = this
         Prefs.init(this)
+        com.phudy.redline.data.Favorites.init(this)
         com.phudy.redline.speech.SpeechModels.init(this)
         Blocklist.init(this)
         WgManager.init(this)

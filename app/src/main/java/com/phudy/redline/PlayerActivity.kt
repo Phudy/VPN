@@ -52,6 +52,10 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import android.content.Intent
 import android.widget.Toast
 import com.phudy.redline.download.Downloader
+import com.phudy.redline.data.Favorite
+import com.phudy.redline.data.Favorites
+import android.content.pm.ActivityInfo
+import androidx.activity.compose.BackHandler
 import android.content.Context
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -274,6 +278,15 @@ class PlayerActivity : ComponentActivity() {
         var showCast by remember { mutableStateOf(false) }
         var controlsVisible by remember { mutableStateOf(true) }
         var zoom by remember { mutableStateOf(false) }
+        var full by remember { mutableStateOf(false) }
+        fun setFull(on: Boolean) {
+            full = on
+            requestedOrientation = if (on) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        BackHandler(enabled = full) { setFull(false) }
+        val favs by Favorites.items.collectAsState()
+        val favItem = remember(url, title) { Favorite.ofVideo(url, title) }
+        val isFav = favs.any { it.id == favItem.id }
         var speed by remember { mutableFloatStateOf(1f) }
         var playerView by remember { mutableStateOf<PlayerView?>(null) }
         var showSpeech by remember { mutableStateOf(false) }
@@ -326,6 +339,8 @@ class PlayerActivity : ComponentActivity() {
                     PlayerView(c).apply {
                         this.player = this@PlayerActivity.player
                         setShowNextButton(false); setShowPreviousButton(false)
+                        // Built-in full screen button in the playback controls
+                        setFullscreenButtonClickListener { on -> setFull(on) }
                         setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { v -> controlsVisible = v == android.view.View.VISIBLE })
                         playerView = this
                     }
@@ -413,6 +428,13 @@ class PlayerActivity : ComponentActivity() {
                         speed = when (speed) { 1f -> 1.25f; 1.25f -> 1.5f; 1.5f -> 2f; 2f -> 0.75f; else -> 1f }
                         player.setPlaybackSpeed(speed)
                     }) { Text("${speed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+                    IconButton(onClick = {
+                        val on = Favorites.toggle(favItem)
+                        Toast.makeText(this@PlayerActivity, if (on) "เพิ่มในรายการชื่นชอบแล้ว ♥" else "เอาออกจากรายการชื่นชอบแล้ว", Toast.LENGTH_SHORT).show()
+                    }) { Icon(if (isFav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, "ชื่นชอบ", tint = if (isFav) R.Red else Color.White) }
+                    IconButton(onClick = { setFull(!full) }) {
+                        Icon(if (full) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen, "เต็มจอ", tint = Color.White)
+                    }
                     IconButton(onClick = { zoom = !zoom }) { Icon(if (zoom) Icons.Rounded.FitScreen else Icons.Rounded.ZoomOutMap, "ขยาย", tint = Color.White) }
                     IconButton(onClick = {
                         if (url.startsWith("http")) {
