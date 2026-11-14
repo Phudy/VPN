@@ -12,9 +12,12 @@ android {
         applicationId = "com.phudy.redline"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
+        externalNativeBuild { cmake { abiFilters("arm64-v8a"); arguments("-DANDROID_STL=c++_static") } }
     }
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
 
     buildTypes {
         release {

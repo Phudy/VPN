@@ -28,6 +28,9 @@ import com.phudy.redline.net.NetTools
 import com.phudy.redline.ui.*
 import com.phudy.redline.ui.theme.R
 import com.phudy.redline.vpn.Blocklist
+import com.phudy.redline.speech.SPEECH_MODELS
+import com.phudy.redline.speech.SpeechModels
+import com.phudy.redline.speech.WhisperNative
 import com.phudy.redline.vpn.VpnController
 import com.phudy.redline.vpn.VpnHub
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +57,8 @@ fun ToolsScreen() {
         SpeedTestCard()
         Spacer(Modifier.height(R.gap))
         TurboDnsCard()
+        Spacer(Modifier.height(R.gap))
+        SpeechModelCard()
         Spacer(Modifier.height(R.gap))
 
         Card(Modifier.padding(horizontal = R.gap).fillMaxWidth()) {
@@ -242,6 +247,45 @@ private fun BlockedLog(onDone: () -> Unit) {
             Spacer(Modifier.height(R.gapS))
             if (recent.isEmpty()) Text("ยังไม่มี — เปิด Shield แล้วใช้งานแอป/เว็บตามปกติ", color = R.Muted)
             recent.forEach { Text("⛔  $it", color = R.Text, fontSize = 13.sp, modifier = Modifier.padding(vertical = 3.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun SpeechModelCard() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val installed by SpeechModels.installed.collectAsState()
+    val selected by SpeechModels.selected.collectAsState()
+    val dl by SpeechModels.downloading.collectAsState()
+    val prog by SpeechModels.progress.collectAsState()
+    Card(Modifier.padding(horizontal = R.gap).fillMaxWidth()) {
+        SectionLabel("แปลเสียงเป็นไทย • whisper.cpp")
+        Text(
+            if (WhisperNative.loaded) "ฟังเสียงในคลิปแล้วแปลเป็นซับไทย 99 ภาษา ทำงานบนเครื่อง (${WhisperNative.variant}) — เปิดในเพลเยอร์ที่ปุ่ม 🗣"
+            else "อุปกรณ์นี้ไม่รองรับ (ต้องเป็น ARM 64-bit)",
+            color = R.Muted, fontSize = 12.sp,
+        )
+        Spacer(Modifier.height(R.gapS))
+        SPEECH_MODELS.forEach { m ->
+            val has = m.id in installed
+            SettingRow(
+                if (selected == m.id) Icons.Rounded.RadioButtonChecked else Icons.Rounded.RadioButtonUnchecked,
+                "${m.label} • ${m.sizeMb} MB", m.note,
+                onClick = { SpeechModels.select(m.id) },
+                trailing = {
+                    when {
+                        dl == m.id -> Text("${(prog * 100).toInt()}%", color = R.Red, fontWeight = FontWeight.Bold)
+                        has -> IconButton(onClick = { SpeechModels.delete(m.id) }) { Icon(Icons.Rounded.DeleteOutline, "ลบ", tint = R.Muted) }
+                        else -> IconButton(enabled = dl == null, onClick = {
+                            scope.launch {
+                                SpeechModels.select(m.id)
+                                SpeechModels.download(m.id).onFailure { Toast.makeText(ctx, "ดาวน์โหลดไม่สำเร็จ: ${it.message}", Toast.LENGTH_LONG).show() }
+                            }
+                        }) { Icon(Icons.Rounded.Download, "ดาวน์โหลด", tint = R.Red) }
+                    }
+                },
+            )
         }
     }
 }
