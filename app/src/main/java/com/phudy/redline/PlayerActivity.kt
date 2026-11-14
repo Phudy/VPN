@@ -15,6 +15,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -43,7 +45,13 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import android.content.Intent
+import android.widget.Toast
+import com.phudy.redline.download.Downloader
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -64,6 +72,7 @@ class PlayerActivity : ComponentActivity() {
 
     private lateinit var player: ExoPlayer
     private lateinit var trackSelector: DefaultTrackSelector
+    private var headers: Map<String, String> = emptyMap()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,7 +94,13 @@ class PlayerActivity : ComponentActivity() {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(30_000, 120_000, 1_500, 3_000)
             .build()
-        player = ExoPlayer.Builder(this).setTrackSelector(trackSelector).setLoadControl(loadControl).build()
+        headers = Downloader.fromBundle(intent.getBundleExtra(EXTRA_HEADERS))
+        val http = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
+            .setDefaultRequestProperties(headers.filterKeys { it != "User-Agent" })
+            .apply { headers["User-Agent"]?.let { setUserAgent(it) } }
+        player = ExoPlayer.Builder(this).setTrackSelector(trackSelector).setLoadControl(loadControl)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http)))
+            .build()
         setMedia(url, null)
         player.playWhenReady = true
 
@@ -191,7 +206,9 @@ class PlayerActivity : ComponentActivity() {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { finish() }) { Icon(Icons.Rounded.ArrowBack, "กลับ", tint = Color.White) }
-                    Text(title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text(title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).widthIn(max = 220.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Row(Modifier.weight(1f).horizontalScroll(rememberScrollState(), reverseScrolling = true), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     Chip(if (translate) "ซับไทย ON" + (srcLang?.let { " • " + SubTranslator.languageName(it) } ?: "") else "ซับไทย OFF", translate) { translate = !translate }
                     IconButton(onClick = { subPicker.launch(arrayOf("*/*")) }) { Icon(Icons.Rounded.Subtitles, "โหลดไฟล์ซับ", tint = Color.White) }
                     IconButton(onClick = {
@@ -202,9 +219,22 @@ class PlayerActivity : ComponentActivity() {
                         player.setPlaybackSpeed(speed)
                     }) { Text("${speed}x", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                     IconButton(onClick = { zoom = !zoom }) { Icon(if (zoom) Icons.Rounded.FitScreen else Icons.Rounded.ZoomOutMap, "ขยาย", tint = Color.White) }
+                    IconButton(onClick = {
+                        if (url.startsWith("http")) {
+                            Downloader.enqueue(this@PlayerActivity, url, title, headers)
+                            Toast.makeText(this@PlayerActivity, "เริ่มดาวน์โหลด — บันทึกไว้ที่ Movies/REDLINE", Toast.LENGTH_SHORT).show()
+                        } else error = "ไฟล์นี้อยู่ในเครื่องแล้ว"
+                    }) { Icon(Icons.Rounded.Download, "ดาวน์โหลด", tint = Color.White) }
+                    IconButton(onClick = {
+                        if (url.startsWith("http")) Downloader.shareLink(this@PlayerActivity, url, title)
+                        else startActivity(Intent.createChooser(
+                            Intent(Intent.ACTION_SEND).setType("video/*").putExtra(Intent.EXTRA_STREAM, Uri.parse(url))
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "แชร์วิดีโอ"))
+                    }) { Icon(Icons.Rounded.Share, "แชร์", tint = Color.White) }
                     IconButton(onClick = { enterPip() }) { Icon(Icons.Rounded.PictureInPictureAlt, "PiP", tint = Color.White) }
                     IconButton(onClick = { if (url.startsWith("http")) showCast = true else error = "แคสต์ได้เฉพาะวิดีโอจากลิงก์ออนไลน์" }) {
                         Icon(Icons.Rounded.Cast, "แคสต์ไปทีวี", tint = R.Red)
+                    }
                     }
                 }
             }
@@ -239,5 +269,6 @@ class PlayerActivity : ComponentActivity() {
     companion object {
         const val EXTRA_URL = "url"
         const val EXTRA_TITLE = "title"
+        const val EXTRA_HEADERS = "headers"
     }
 }

@@ -18,10 +18,14 @@ class RedlineApp : Application() {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_VPN, "สถานะ VPN", NotificationManager.IMPORTANCE_LOW)
         )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_DL, "ดาวน์โหลดวิดีโอ", NotificationManager.IMPORTANCE_LOW)
+        )
     }
 
     companion object {
         const val CHANNEL_VPN = "vpn_status"
+        const val CHANNEL_DL = "downloads"
         lateinit var instance: RedlineApp
             private set
     }

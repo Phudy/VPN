@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.phudy.redline.PlayerActivity
 import com.phudy.redline.data.Prefs
+import com.phudy.redline.download.Downloader
+import android.widget.Toast
 import com.phudy.redline.ui.*
 import com.phudy.redline.ui.theme.R
 import com.phudy.redline.vpn.Blocklist
@@ -164,12 +166,25 @@ fun BrowserScreen() {
                         Text(v.substringAfterLast('/').substringBefore('?').ifBlank { v }, color = R.Text, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                         Text(v, color = R.Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(10.dp))
+                        val headers = Downloader.headersFor(web?.url, web?.settings?.userAgentString, v)
                         Row(horizontalArrangement = Arrangement.spacedBy(R.gapS)) {
                             RedButton("เล่น", Icons.Rounded.PlayArrow, Modifier.weight(1f)) {
                                 Prefs.addHistory(v)
-                                ctx.startActivity(Intent(ctx, PlayerActivity::class.java).putExtra(PlayerActivity.EXTRA_URL, v).putExtra(PlayerActivity.EXTRA_TITLE, pageTitle))
+                                ctx.startActivity(
+                                    Intent(ctx, PlayerActivity::class.java).putExtra(PlayerActivity.EXTRA_URL, v)
+                                        .putExtra(PlayerActivity.EXTRA_TITLE, pageTitle)
+                                        .putExtra(PlayerActivity.EXTRA_HEADERS, Downloader.toBundle(headers))
+                                )
                             }
                             GhostButton("ทีวี", Icons.Rounded.Cast, Modifier.weight(1f)) { castUrl = v }
+                        }
+                        Spacer(Modifier.height(R.gapS))
+                        Row(horizontalArrangement = Arrangement.spacedBy(R.gapS)) {
+                            GhostButton("ดาวน์โหลด", Icons.Rounded.Download, Modifier.weight(1f)) {
+                                Downloader.enqueue(ctx, v, pageTitle, headers)
+                                Toast.makeText(ctx, "เริ่มดาวน์โหลด — ดูได้ที่แท็บมีเดีย", Toast.LENGTH_SHORT).show()
+                            }
+                            GhostButton("แชร์", Icons.Rounded.Share, Modifier.weight(1f)) { Downloader.shareLink(ctx, v, pageTitle) }
                         }
                     }
                 }

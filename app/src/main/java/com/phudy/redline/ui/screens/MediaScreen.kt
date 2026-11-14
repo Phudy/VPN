@@ -18,6 +18,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phudy.redline.PlayerActivity
 import com.phudy.redline.data.Prefs
+import com.phudy.redline.download.Downloader
+import com.phudy.redline.download.DlStatus
+import com.phudy.redline.net.NetTools
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import com.phudy.redline.ui.*
 import com.phudy.redline.ui.theme.R
 
@@ -53,11 +58,22 @@ fun MediaScreen() {
                 RedButton("เล่น", Icons.Rounded.PlayArrow, Modifier.weight(1f), enabled = link.startsWith("http")) { play(link.trim()) }
                 GhostButton("ส่งไปทีวี", Icons.Rounded.Cast, Modifier.weight(1f)) { if (link.startsWith("http")) castUrl = link.trim() }
             }
+            Spacer(Modifier.height(R.gapS))
+            Row(horizontalArrangement = Arrangement.spacedBy(R.gapS)) {
+                GhostButton("ดาวน์โหลด", Icons.Rounded.Download, Modifier.weight(1f)) {
+                    if (link.startsWith("http")) Downloader.enqueue(ctx, link.trim(), null)
+                }
+                GhostButton("แชร์ลิงก์", Icons.Rounded.Share, Modifier.weight(1f)) {
+                    if (link.startsWith("http")) Downloader.shareLink(ctx, link.trim(), null)
+                }
+            }
         }
         Spacer(Modifier.height(R.gapS))
         Card(Modifier.padding(horizontal = R.gap).fillMaxWidth()) {
             SettingRow(Icons.Rounded.FolderOpen, "เปิดไฟล์วิดีโอในเครื่อง", "MP4 • MKV • WEBM + ไฟล์ซับ SRT/VTT/ASS", onClick = { filePicker.launch(arrayOf("video/*")) })
         }
+
+        DownloadsSection()
 
         Spacer(Modifier.height(R.gap))
         Card(Modifier.padding(horizontal = R.gap).fillMaxWidth()) {
@@ -67,6 +83,7 @@ fun MediaScreen() {
             Feature(Icons.Rounded.Speed, "บัฟเฟอร์ใหญ่ 2 นาที", "ลดการกระตุกเมื่อเน็ตแกว่ง")
             Feature(Icons.Rounded.Cast, "แคสต์ Samsung Smart TV", "DLNA ในวง Wi-Fi เดียวกัน + Smart View")
             Feature(Icons.Rounded.PictureInPictureAlt, "ภาพซ้อนภาพ (PiP)", "ดูต่อขณะใช้แอปอื่น")
+            Feature(Icons.Rounded.Download, "ดาวน์โหลด & แชร์", "MP4 และ HLS (m3u8) ดาวน์โหลดต่อได้เมื่อเน็ตหลุด บันทึกลงแกลเลอรี")
         }
 
         if (history.isNotEmpty()) {
@@ -88,3 +105,45 @@ fun MediaScreen() {
 @Composable
 private fun Feature(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String) =
     SettingRow(icon, title, sub)
+
+@Composable
+private fun DownloadsSection() {
+    val ctx = LocalContext.current
+    val tasks by Downloader.tasks.collectAsState()
+    if (tasks.isEmpty()) return
+    Spacer(Modifier.height(R.gap))
+    SectionLabel("ดาวน์โหลด • บันทึกไว้ที่ Movies/REDLINE", Modifier.padding(horizontal = R.gap))
+    tasks.forEach { t ->
+        Card(Modifier.padding(horizontal = R.gap, vertical = 4.dp).fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(t.title, color = R.Text, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val status = when (t.status) {
+                        DlStatus.QUEUED -> "รอคิว…"
+                        DlStatus.RUNNING -> (if (t.progress >= 0) "${(t.progress * 100).toInt()}% • " else "") + NetTools.formatBytes(t.bytes)
+                        DlStatus.DONE -> "เสร็จแล้ว • " + NetTools.formatBytes(t.bytes)
+                        DlStatus.FAILED -> "ล้มเหลว: ${t.error}"
+                        DlStatus.CANCELLED -> "ยกเลิกแล้ว"
+                    }
+                    Text(status, color = if (t.status == DlStatus.FAILED) R.Red else R.Muted, fontSize = 12.sp, maxLines = 2)
+                }
+                when (t.status) {
+                    DlStatus.RUNNING, DlStatus.QUEUED ->
+                        IconButton(onClick = { Downloader.cancel(t.id) }) { Icon(Icons.Rounded.Close, "ยกเลิก", tint = R.Muted) }
+                    DlStatus.DONE -> {
+                        IconButton(onClick = { Downloader.openFile(ctx, t) }) { Icon(Icons.Rounded.PlayArrow, "เล่น", tint = R.Red) }
+                        IconButton(onClick = { Downloader.shareFile(ctx, t) }) { Icon(Icons.Rounded.Share, "แชร์ไฟล์", tint = R.Red) }
+                    }
+                    DlStatus.FAILED, DlStatus.CANCELLED ->
+                        IconButton(onClick = { Downloader.retry(ctx, t.id) }) { Icon(Icons.Rounded.Refresh, "ลองใหม่", tint = R.Red) }
+                }
+                IconButton(onClick = { Downloader.remove(ctx, t.id, deleteFile = false) }) { Icon(Icons.Rounded.DeleteOutline, "เอาออกจากรายการ", tint = R.Muted) }
+            }
+            if (t.status == DlStatus.RUNNING) {
+                Spacer(Modifier.height(8.dp))
+                if (t.progress >= 0) LinearProgressIndicator(progress = { t.progress }, Modifier.fillMaxWidth(), color = R.Red, trackColor = R.Surface2)
+                else LinearProgressIndicator(Modifier.fillMaxWidth(), color = R.Red, trackColor = R.Surface2)
+            }
+        }
+    }
+}
