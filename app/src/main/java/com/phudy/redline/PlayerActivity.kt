@@ -94,7 +94,9 @@ class PlayerActivity : ComponentActivity() {
     private var fullProgress by mutableFloatStateOf(0f)
     private var speechJob: Job? = null
     private val chunks = Channel<Pair<FloatArray, Long>>(2, BufferOverflow.DROP_OLDEST)
-    private val tap = AudioTap(6) { pcm, start -> chunks.trySend(pcm to start) }
+    private val tap = AudioTap(5) { pcm, start -> chunks.trySend(pcm to start) }
+    private var chunksDone by mutableIntStateOf(0)
+    private var lastSecs by mutableFloatStateOf(0f)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -171,21 +173,33 @@ class PlayerActivity : ComponentActivity() {
                     tap.baseMs = player.currentPosition
                     tap.enabled = true
                     speechStatus = "กำลังฟัง…"
+                    chunksDone = 0
                     for ((pcm, start) in chunks) {
                         val gen = tap.generation
+                        val t0 = System.currentTimeMillis()
                         val cues = runCatching { SpeechTranslator.process(pcm, start) }
                             .onFailure { speechStatus = "แปลเสียงไม่ได้: ${it.message}" }.getOrDefault(emptyList())
+                        lastSecs = (System.currentTimeMillis() - t0) / 1000f
+                        chunksDone++
                         if (gen != tap.generation) continue
-                        val at = player.currentPosition
-                        speechCues.addAll(cues.map { it to at })
+                        if (cues.isEmpty()) {
+                            if (!speechStatus.orEmpty().startsWith("แปลเสียงไม่ได้"))
+                                speechStatus = "กำลังฟัง… ยังไม่ได้ยินเสียงพูด (%d ช่วง, %.1f วิ/ช่วง)".format(chunksDone, lastSecs)
+                            continue
+                        }
+                        // Results come back after the words were spoken. Delay this batch as a whole so
+                        // its first line appears now and the rest keep their natural spacing.
+                        val now = player.currentPosition
+                        val lag = (now - cues.first().startMs).coerceAtLeast(0)
+                        speechCues.addAll(cues.map { it.copy(startMs = it.startMs + lag, endMs = it.endMs + lag) to Long.MAX_VALUE })
                         if (speechCues.size > 200) speechCues.removeRange(0, speechCues.size - 200)
-                        cues.firstOrNull()?.let { speechStatus = "แปลจาก " + SubTranslator.languageName(it.lang) }
+                        speechStatus = "แปลจาก %s • ช้ากว่าเสียง %.0f วิ".format(SubTranslator.languageName(cues.first().lang), lag / 1000f)
                     }
                 }
                 SpeechMode.FULL -> {
                     speechStatus = "กำลังแปลทั้งคลิป…"
                     runCatching {
-                        FullClipTranslator.run(this@PlayerActivity, url, headers, onProgress = { fullProgress = it }) { cues ->
+                        FullClipTranslator.run(this@PlayerActivity, url, headers, player.currentPosition, onProgress = { fullProgress = it }) { cues ->
                             runOnUiThread { speechCues.addAll(cues.map { it to Long.MAX_VALUE }) }
                         }
                     }.onSuccess { speechStatus = "แปลครบทั้งคลิปแล้ว (${speechCues.size} ประโยค)" }
@@ -199,9 +213,8 @@ class PlayerActivity : ComponentActivity() {
     /** Cue to show at [pos]: exact match first; in live mode a just-arrived cue stays up a few seconds. */
     private fun cueAt(pos: Long): TimedCue? {
         for (i in speechCues.indices.reversed()) {
-            val (c, arrived) = speechCues[i]
-            if (pos in c.startMs..c.endMs + 300) return c
-            if (arrived != Long.MAX_VALUE && pos > c.endMs && pos - maxOf(arrived, c.endMs) < 3500 && pos - c.endMs < 9000) return c
+            val c = speechCues[i].first
+            if (pos in c.startMs..c.endMs + 400) return c
         }
         return null
     }
@@ -231,7 +244,7 @@ class PlayerActivity : ComponentActivity() {
                         }
                     } else {
                         ModeRow("ปิด", speechMode == SpeechMode.OFF) { startSpeech(SpeechMode.OFF, url); onDismiss() }
-                        ModeRow("แปลสด (ซับขึ้นช้ากว่าเสียง ~5-8 วิ)", speechMode == SpeechMode.LIVE) { startSpeech(SpeechMode.LIVE, url); onDismiss() }
+                        ModeRow("แปลสด (ซับขึ้นช้ากว่าเสียงเล็กน้อย)", speechMode == SpeechMode.LIVE) { startSpeech(SpeechMode.LIVE, url); onDismiss() }
                         if (canFull) ModeRow("แปลทั้งคลิปล่วงหน้า (ซับตรงเวลา แนะนำ)", speechMode == SpeechMode.FULL) { startSpeech(SpeechMode.FULL, url); onDismiss() }
                         else Text("สตรีม HLS ใช้ได้เฉพาะแปลสด — ดาวน์โหลดคลิปก่อนเพื่อแปลทั้งคลิปให้ตรงเวลา", color = R.Muted, fontSize = 11.sp)
                     }
@@ -265,6 +278,16 @@ class PlayerActivity : ComponentActivity() {
         var playerView by remember { mutableStateOf<PlayerView?>(null) }
         var showSpeech by remember { mutableStateOf(false) }
         var speechCue by remember { mutableStateOf<TimedCue?>(null) }
+        val mlDownloading by SubTranslator.downloadingModel.collectAsState()
+        var hasTextTrack by remember { mutableStateOf(false) }
+        DisposableEffect(Unit) {
+            val l = object : Player.Listener {
+                override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                    hasTextTrack = tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }
+                }
+            }
+            player.addListener(l); onDispose { player.removeListener(l) }
+        }
         LaunchedEffect(speechMode) {
             while (speechMode != SpeechMode.OFF) { speechCue = cueAt(player.currentPosition); delay(150) }
             speechCue = null
@@ -345,7 +368,7 @@ class PlayerActivity : ComponentActivity() {
                     Icon(Icons.Rounded.RecordVoiceOver, null, tint = R.Red, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        (speechStatus ?: "") + if (speechMode == SpeechMode.FULL && fullProgress < 1f) " ${(fullProgress * 100).toInt()}%" else "",
+                        (mlDownloading?.let { "กำลังโหลดโมเดลแปล ${SubTranslator.languageName(it)}→ไทย ครั้งแรก (~30 MB)…" } ?: speechStatus ?: "") + if (speechMode == SpeechMode.FULL && fullProgress < 1f) " ${(fullProgress * 100).toInt()}%" else "",
                         color = Color.White, fontSize = 12.sp,
                     )
                 }
@@ -377,7 +400,8 @@ class PlayerActivity : ComponentActivity() {
                     Text(title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false).widthIn(max = 220.dp))
                     Spacer(Modifier.width(8.dp))
                     Row(Modifier.weight(1f).horizontalScroll(rememberScrollState(), reverseScrolling = true), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    Chip(if (translate) "ซับไทย ON" + (srcLang?.let { " • " + SubTranslator.languageName(it) } ?: "") else "ซับไทย OFF", translate) { translate = !translate }
+                    if (!hasTextTrack) Chip("คลิปไม่มีซับ → แปลเสียง", speechMode != SpeechMode.OFF) { showSpeech = true }
+                    else Chip(if (translate) "ซับไทย ON" + (srcLang?.let { " • " + SubTranslator.languageName(it) } ?: "") else "ซับไทย OFF", translate) { translate = !translate }
                     IconButton(onClick = { showSpeech = true }) {
                         Icon(Icons.Rounded.RecordVoiceOver, "แปลเสียงเป็นไทย", tint = if (speechMode != SpeechMode.OFF) R.Red else Color.White)
                     }

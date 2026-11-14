@@ -51,6 +51,13 @@ Java_com_phudy_redline_speech_WhisperNative_transcribe(JNIEnv *env, jobject, jlo
     p.suppress_nst = true;
 
     jsize n = env->GetArrayLength(audio);
+    // whisper's encoder always works on a 30 s window. For short live chunks, shrink the
+    // window to the real audio length (+ margin): 3-5x faster, which is what makes live mode keep up.
+    if (n < 16000 * 28) {
+        int ctx_frames = n / 320 + 128;          // 50 encoder frames per second
+        p.audio_ctx = ctx_frames > 1500 ? 0 : ctx_frames;
+    }
+
     jfloat *pcm = env->GetFloatArrayElements(audio, nullptr);
     int rc = whisper_full(ctx, p, pcm, n);
     env->ReleaseFloatArrayElements(audio, pcm, JNI_ABORT);

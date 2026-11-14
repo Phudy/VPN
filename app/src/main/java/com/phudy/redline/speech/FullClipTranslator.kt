@@ -20,7 +20,7 @@ import java.nio.ByteOrder
 object FullClipTranslator {
 
     suspend fun run(
-        ctx: Context, url: String, headers: Map<String, String>,
+        ctx: Context, url: String, headers: Map<String, String>, fromMs: Long,
         onProgress: (Float) -> Unit, onCues: (List<TimedCue>) -> Unit,
     ) = withContext(Dispatchers.IO) {
         val ex = MediaExtractor()
@@ -28,6 +28,9 @@ object FullClipTranslator {
         val track = (0 until ex.trackCount).firstOrNull { ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
             ?: error("ไม่พบเสียงในคลิปนี้")
         ex.selectTrack(track)
+        // Start where the viewer is, so the first subtitles are ready within ~30 s
+        if (fromMs > 2000) ex.seekTo((fromMs - 1000) * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+        val startMs = (ex.sampleTime / 1000).coerceAtLeast(0)
         val fmt = ex.getTrackFormat(track)
         val durationUs = if (fmt.containsKey(MediaFormat.KEY_DURATION)) fmt.getLong(MediaFormat.KEY_DURATION) else 0L
         val codec = MediaCodec.createDecoderByType(fmt.getString(MediaFormat.KEY_MIME)!!)
@@ -39,7 +42,8 @@ object FullClipTranslator {
         val window = 16000 * 30
         val buf = FloatArray(window)
         var n = 0
-        var chunkStartMs = 0L
+        var chunkStartMs = startMs
+        var floatPcm = false
         var pos = 0.0
         var prev = 0f
         val info = MediaCodec.BufferInfo()
@@ -74,15 +78,18 @@ object FullClipTranslator {
                     o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         val f = codec.outputFormat
                         rate = f.getInteger(MediaFormat.KEY_SAMPLE_RATE); ch = f.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                        floatPcm = f.containsKey(MediaFormat.KEY_PCM_ENCODING) &&
+                            f.getInteger(MediaFormat.KEY_PCM_ENCODING) == android.media.AudioFormat.ENCODING_PCM_FLOAT
                     }
                     o >= 0 -> {
                         val ob = codec.getOutputBuffer(o)!!.order(ByteOrder.nativeOrder())
                         ob.position(info.offset); ob.limit(info.offset + info.size)
                         val step = rate / 16000.0
                         val sb = ob.asShortBuffer()
-                        while (sb.remaining() >= ch) {
+                        val fb = ob.asFloatBuffer()
+                        while ((if (floatPcm) fb.remaining() else sb.remaining()) >= ch) {
                             var sum = 0f
-                            repeat(ch) { sum += sb.get() / 32768f }
+                            repeat(ch) { sum += if (floatPcm) fb.get() else sb.get() / 32768f }
                             val cur = sum / ch
                             while (pos < 1.0) {
                                 buf[n++] = prev + (cur - prev) * pos.toFloat()
@@ -91,7 +98,7 @@ object FullClipTranslator {
                             }
                             pos -= 1.0; prev = cur
                         }
-                        if (durationUs > 0) onProgress((info.presentationTimeUs.toFloat() / durationUs).coerceIn(0f, 1f))
+                        if (durationUs > 0) onProgress(((info.presentationTimeUs - startMs * 1000).toFloat() / (durationUs - startMs * 1000)).coerceIn(0f, 1f))
                         codec.releaseOutputBuffer(o, false)
                         if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
                     }

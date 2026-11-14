@@ -8,6 +8,7 @@ import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * On-device subtitle translation to Thai (Google ML Kit, ~30 MB model per language,
@@ -19,6 +20,8 @@ object SubTranslator {
     private val memo = object : LinkedHashMap<String, String>(256, 0.75f, true) {
         override fun removeEldestEntry(e: MutableMap.MutableEntry<String, String>?) = size > 800
     }
+    /** Language whose Thai translation model is downloading right now (first use, ~30 MB). */
+    val downloadingModel = MutableStateFlow<String?>(null)
     @Volatile var lastSource: String? = null
         private set
 
@@ -37,7 +40,8 @@ object SubTranslator {
                 TranslatorOptions.Builder().setSourceLanguage(src).setTargetLanguage(TranslateLanguage.THAI).build()
             )
         }
-        tr.downloadModelIfNeeded(DownloadConditions.Builder().build()).await()
+        downloadingModel.value = src
+        try { tr.downloadModelIfNeeded(DownloadConditions.Builder().build()).await() } finally { downloadingModel.value = null }
         val out = tr.translate(clean).await()
         synchronized(memo) { memo[clean] = out }
         return out
