@@ -183,7 +183,7 @@ class EmbedPlayerActivity : ComponentActivity() {
                         }
                     }
                 }
-                castUrl?.let { CastSheet(it, title) { castUrl = null } }
+                castUrl?.let { CastSheet(it, title, Downloader.headersFor(embed, web?.settings?.userAgentString, it)) { castUrl = null } }
             }
         }
     }

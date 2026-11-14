@@ -28,10 +28,13 @@ object DlnaCaster {
         try {
             MulticastSocket(null).use { sock ->
                 sock.reuseAddress = true
-                sock.bind(null)
+                // Bind to the Wi-Fi address so discovery never leaves through a VPN tunnel
+                sock.bind(java.net.InetSocketAddress(CastProxy.lanAddress(), 0))
+                CastProxy.lanInterface()?.let { runCatching { sock.networkInterface = it } }
+                sock.timeToLive = 4
                 sock.soTimeout = 800
                 val group = InetAddress.getByName("239.255.255.250")
-                for (st in listOf("urn:schemas-upnp-org:device:MediaRenderer:1", "urn:schemas-upnp-org:service:AVTransport:1")) {
+                for (st in listOf("urn:schemas-upnp-org:device:MediaRenderer:1", "urn:schemas-upnp-org:service:AVTransport:1", "ssdp:all")) {
                     val msg = "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: $st\r\n\r\n".toByteArray()
                     repeat(2) { sock.send(DatagramPacket(msg, msg.size, group, 1900)) }
                 }
@@ -49,6 +52,25 @@ object DlnaCaster {
         } catch (_: Exception) {
         } finally { lock.release() }
         locations.mapNotNull { describe(it) }.distinctBy { it.controlUrl }
+    }
+
+    /**
+     * Finds a TV by IP when multicast discovery is blocked (routers with "AP isolation" /
+     * IGMP filtering do this): unicast M-SEARCH first, then Samsung's fixed DLNA address :9197/dmr.
+     */
+    suspend fun probe(ip: String): Renderer? = withContext(Dispatchers.IO) {
+        val host = ip.trim()
+        runCatching {
+            java.net.DatagramSocket(java.net.InetSocketAddress(CastProxy.lanAddress(), 0)).use { s ->
+                s.soTimeout = 1500
+                val msg = "M-SEARCH * HTTP/1.1\r\nHOST: $host:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 1\r\nST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n".toByteArray()
+                s.send(DatagramPacket(msg, msg.size, InetAddress.getByName(host), 1900))
+                val buf = ByteArray(4096); val p = DatagramPacket(buf, buf.size); s.receive(p)
+                Regex("(?im)^location:\\s*(\\S+)").find(String(p.data, 0, p.length))?.groupValues?.get(1)?.let { describe(it) }
+            }
+        }.getOrNull()
+            ?: describe("http://$host:9197/dmr")
+            ?: describe("http://$host:7676/smp_15_")
     }
 
     private fun describe(location: String): Renderer? = runCatching {
@@ -80,19 +102,32 @@ object DlnaCaster {
         }
     }
 
-    suspend fun play(r: Renderer, url: String, title: String): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            val mime = mimeFor(url)
-            val didl = "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
-                "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\">" +
-                "<item id=\"0\" parentID=\"-1\" restricted=\"1\"><dc:title>${esc(title)}</dc:title>" +
-                "<upnp:class>object.item.videoItem</upnp:class>" +
-                "<res protocolInfo=\"http-get:*:$mime:*\">${esc(url)}</res></item></DIDL-Lite>"
-            runCatching { soap(r, "Stop", "") }
-            soap(r, "SetAVTransportURI", "<CurrentURI>${esc(url)}</CurrentURI><CurrentURIMetaData>${esc(didl)}</CurrentURIMetaData>")
-            soap(r, "Play", "<Speed>1</Speed>")
+    /**
+     * Sends a video to the TV. The TV streams it through [CastProxy] on the phone, which adds the
+     * website's headers, Samsung's DLNA headers, byte ranges, and serves downloaded files.
+     */
+    suspend fun play(ctx: Context, r: Renderer, source: String, title: String, headers: Map<String, String> = emptyMap()): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val mime = if (source.startsWith("content://")) ctx.contentResolver.getType(android.net.Uri.parse(source)) ?: "video/mp4" else mimeFor(source)
+                val url = CastProxy.urlFor(ctx, source, headers)
+                val dlna = "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+                val didl = "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" " +
+                    "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:upnp=\"urn:schemas-upnp-org:metadata-1-0/upnp/\" " +
+                    "xmlns:sec=\"http://www.sec.co.kr/\">" +
+                    "<item id=\"0\" parentID=\"-1\" restricted=\"1\"><dc:title>${esc(title)}</dc:title>" +
+                    "<upnp:class>object.item.videoItem</upnp:class>" +
+                    "<res protocolInfo=\"http-get:*:$mime:$dlna\">${esc(url)}</res></item></DIDL-Lite>"
+                runCatching { soap(r, "Stop", "") }
+                // Some firmware rejects metadata it doesn't like — retry without it
+                runCatching { soap(r, "SetAVTransportURI", "<CurrentURI>${esc(url)}</CurrentURI><CurrentURIMetaData>${esc(didl)}</CurrentURIMetaData>") }
+                    .recoverCatching { soap(r, "SetAVTransportURI", "<CurrentURI>${esc(url)}</CurrentURI><CurrentURIMetaData></CurrentURIMetaData>") }
+                    .getOrThrow()
+                runCatching { soap(r, "Play", "<Speed>1</Speed>") }.recoverCatching {
+                    Thread.sleep(1500); soap(r, "Play", "<Speed>1</Speed>")
+                }.getOrThrow()
+            }
         }
-    }
 
     suspend fun stop(r: Renderer) = withContext(Dispatchers.IO) { runCatching { soap(r, "Stop", "") } }
     suspend fun pause(r: Renderer) = withContext(Dispatchers.IO) { runCatching { soap(r, "Pause", "") } }

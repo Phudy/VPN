@@ -54,6 +54,10 @@ object Prefs {
     private val _sources = MutableStateFlow<Set<String>>(emptySet())
     val exploreSources: StateFlow<Set<String>> = _sources
 
+    private val _lan = MutableStateFlow(true)
+    val allowLan: StateFlow<Boolean> = _lan
+    fun setAllowLan(on: Boolean) { _lan.value = on; sp.edit().putBoolean("allow_lan", on).apply() }
+
     fun setAdultConfirmed() { _adult.value = true; sp.edit().putBoolean("adult", true).apply() }
     fun setExploreLock(on: Boolean) { _lock.value = on; sp.edit().putBoolean("xlock", on).apply() }
     fun toggleSource(id: String) {
@@ -72,6 +76,7 @@ object Prefs {
         _selected.value = sp.getString("profile", null)
         _history.value = sp.getString("history", "")!!.split('\n').filter { it.isNotBlank() }
         _adult.value = sp.getBoolean("adult", false)
+        _lan.value = sp.getBoolean("allow_lan", true)
         _lock.value = sp.getBoolean("xlock", false)
         _sources.value = sp.getStringSet("xsources", null)?.toSet()
             ?: com.phudy.redline.explore.PROVIDERS.map { it.id }.toSet()

@@ -25,6 +25,13 @@ object WgManager {
 
     fun init(ctx: Context) { backend = GoBackend(ctx.applicationContext) }
 
+    /** All public IPv4 space, i.e. 0.0.0.0/0 minus 10/8, 172.16/12, 192.168/16, 169.254/16, multicast. */
+    private const val PUBLIC_V4 = "0.0.0.0/5, 8.0.0.0/7, 11.0.0.0/8, 12.0.0.0/6, 16.0.0.0/4, 32.0.0.0/3, 64.0.0.0/2, " +
+        "128.0.0.0/3, 160.0.0.0/5, 168.0.0.0/6, 172.0.0.0/12, 172.32.0.0/11, 172.64.0.0/10, 172.128.0.0/9, " +
+        "173.0.0.0/8, 174.0.0.0/7, 176.0.0.0/4, 192.0.0.0/9, 192.128.0.0/11, 192.160.0.0/13, 192.169.0.0/16, " +
+        "192.170.0.0/15, 192.172.0.0/14, 192.176.0.0/12, 192.192.0.0/10, 193.0.0.0/8, 194.0.0.0/7, 196.0.0.0/6, " +
+        "200.0.0.0/5, 208.0.0.0/4"
+
     /** Builds the final config: user profile + ad-block DNS + split tunneling. */
     fun buildConfig(profile: WgProfile): Config {
         val lines = profile.file.readLines().toMutableList()
@@ -39,6 +46,16 @@ object WgManager {
         if (Prefs.adBlock.value) extra += "DNS = 94.140.14.14, 94.140.15.15" // AdGuard: blocks ads inside the tunnel
         if (Prefs.excludedApps.value.isNotEmpty()) extra += "ExcludedApplications = " + Prefs.excludedApps.value.joinToString(", ")
         cleaned.addAll(at, extra)
+        // Keep the home network reachable (Smart TV casting, printers, router) while the
+        // internet goes through the tunnel: the same list WireGuard's "Exclude private IPs" uses.
+        if (Prefs.allowLan.value) {
+            for (i in cleaned.indices) {
+                val l = cleaned[i]
+                if (l.substringBefore('=').trim().equals("AllowedIPs", true) && l.contains("0.0.0.0/0")) {
+                    cleaned[i] = l.replace("0.0.0.0/0", PUBLIC_V4)
+                }
+            }
+        }
         return Config.parse(cleaned.joinToString("\n").byteInputStream())
     }
 

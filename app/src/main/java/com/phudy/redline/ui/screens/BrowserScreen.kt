@@ -191,5 +191,5 @@ fun BrowserScreen() {
             }
         }
     }
-    castUrl?.let { CastSheet(it, pageTitle.ifBlank { "REDLINE" }) { castUrl = null } }
+    castUrl?.let { CastSheet(it, pageTitle.ifBlank { "REDLINE" }, Downloader.headersFor(web?.url, web?.settings?.userAgentString, it)) { castUrl = null } }
 }

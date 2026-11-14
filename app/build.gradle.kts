@@ -12,8 +12,8 @@ android {
         applicationId = "com.phudy.redline"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.4.0"
+        versionCode = 8
+        versionName = "1.4.1"
         externalNativeBuild { cmake { abiFilters("arm64-v8a"); arguments("-DANDROID_STL=c++_static") } }
     }
     ndkVersion = "27.2.12479018"

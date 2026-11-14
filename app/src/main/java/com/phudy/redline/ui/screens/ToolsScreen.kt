@@ -69,6 +69,12 @@ fun ToolsScreen() {
                 onClick = { ctx.startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) },
                 trailing = { Icon(Icons.Rounded.OpenInNew, null, tint = R.Muted) },
             )
+            val lan by Prefs.allowLan.collectAsState()
+            SettingRow(
+                Icons.Rounded.Router, "เข้าถึงอุปกรณ์ในบ้าน (LAN)",
+                "ให้แคสต์ทีวี / เครื่องพิมพ์ใช้ได้ขณะเปิด Secure VPN", checked = lan,
+                onCheck = { Prefs.setAllowLan(it); VpnController.restartIfOn(ctx) },
+            )
             SettingRow(
                 Icons.Rounded.CallSplit, "Split Tunneling",
                 if (excluded.isEmpty()) "ทุกแอปผ่าน REDLINE" else "${excluded.size} แอปไม่ผ่าน VPN",

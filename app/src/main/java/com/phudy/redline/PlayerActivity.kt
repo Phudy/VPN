@@ -449,7 +449,7 @@ class PlayerActivity : ComponentActivity() {
                                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "แชร์วิดีโอ"))
                     }) { Icon(Icons.Rounded.Share, "แชร์", tint = Color.White) }
                     IconButton(onClick = { enterPip() }) { Icon(Icons.Rounded.PictureInPictureAlt, "PiP", tint = Color.White) }
-                    IconButton(onClick = { if (url.startsWith("http")) showCast = true else error = "แคสต์ได้เฉพาะวิดีโอจากลิงก์ออนไลน์" }) {
+                    IconButton(onClick = { showCast = true }) {
                         Icon(Icons.Rounded.Cast, "แคสต์ไปทีวี", tint = R.Red)
                     }
                     }
@@ -464,7 +464,7 @@ class PlayerActivity : ComponentActivity() {
             }
         }
         if (showSpeech) SpeechDialog(url) { showSpeech = false }
-        if (showCast) CastSheet(url, title) { showCast = false; player.pause() }
+        if (showCast) CastSheet(url, title, headers) { showCast = false; player.pause() }
     }
 
     @Composable

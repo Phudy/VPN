@@ -111,6 +111,8 @@ private fun Feature(icon: androidx.compose.ui.graphics.vector.ImageVector, title
 private fun DownloadsSection() {
     val ctx = LocalContext.current
     val tasks by Downloader.tasks.collectAsState()
+    var castFile by remember { mutableStateOf<Pair<String?, String>?>(null) }
+    castFile?.let { (u, t) -> if (u != null) CastSheet(u, t) { castFile = null } }
     if (tasks.isEmpty()) return
     Spacer(Modifier.height(R.gap))
     SectionLabel("ดาวน์โหลด • บันทึกไว้ที่ Movies/REDLINE", Modifier.padding(horizontal = R.gap))
@@ -134,6 +136,7 @@ private fun DownloadsSection() {
                     DlStatus.DONE -> {
                         IconButton(onClick = { Downloader.openFile(ctx, t) }) { Icon(Icons.Rounded.PlayArrow, "เล่น", tint = R.Red) }
                         IconButton(onClick = { Downloader.shareFile(ctx, t) }) { Icon(Icons.Rounded.Share, "แชร์ไฟล์", tint = R.Red) }
+                        IconButton(onClick = { castFile = t.fileUri to t.title }) { Icon(Icons.Rounded.Cast, "แคสต์ไปทีวี", tint = R.Red) }
                     }
                     DlStatus.FAILED, DlStatus.CANCELLED ->
                         IconButton(onClick = { Downloader.retry(ctx, t.id) }) { Icon(Icons.Rounded.Refresh, "ลองใหม่", tint = R.Red) }
