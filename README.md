@@ -33,6 +33,10 @@
 
 ## ติดตั้ง
 
+<img src="release/download-qr.png" width="320" alt="QR ดาวน์โหลด REDLINE VPN">
+
+สแกน QR หรือเปิดลิงก์ https://github.com/Phudy/VPN/raw/claude/mobile-vpn-app-w9ewpi/release/REDLINE-VPN.apk (ลิงก์คงที่ ได้เวอร์ชันล่าสุดเสมอ)
+
 1. ดาวน์โหลด APK จาก GitHub Actions (แท็บ Actions › Build APK › Artifacts) หรือ build เอง
 2. เปิดไฟล์บนมือถือ แล้วอนุญาต "ติดตั้งจากแหล่งที่ไม่รู้จัก"
 3. เปิดแอป กดปุ่ม Power แล้วอนุญาต VPN
